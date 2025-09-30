@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Family Budget — Live Dashboard</title>
+  <script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+  <style>
+    :root {
+      --bg:#0b0b10;
+      --card:#141420;
+      --ink:#e9eaf3;
+      --muted:#a7abc3;
+      --accent:#6cf0c2;
+      --accent-2:#6aa8ff;
+      --bad:#ff6a6a;
+      --good:#6cf0c2;
+      --border:rgba(255,255,255,0.08);
+      --radius:18px;
+      --shadow:0 8px 28px rgba(0,0,0,.25);
+    }
+    html,body{height:100%;}
+    body{margin:0;background:radial-gradient(1000px 800px at 80% -100px,#1a1a2b 0%,#0b0b10 50%), var(--bg);color:var(--ink);font:500 16px/1.4 Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;}
+    .wrap{max-width:1100px;margin:24px auto;padding:0 16px 80px;}
+    header{display:flex;align-items:center;gap:12px;margin:8px 0 18px;}
+    .dot{width:10px;height:10px;border-radius:50%;background:var(--accent);box-shadow:0 0 18px var(--accent);}
+    h1{font-size:24px;margin:0 0 2px;}
+    .sub{color:var(--muted);font-size:14px}
+    .grid{display:grid;grid-template-columns:1.1fr .9fr;gap:16px}
+    @media (max-width:900px){.grid{grid-template-columns:1fr;}}
+    .card{background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.02));border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px}
+    .card h2{margin:0 0 14px;font-size:18px}
+    .kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:0 0 14px}
+    .kpi{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px}
+    .kpi .label{color:var(--muted);font-size:12px}
+    .kpi .value{font-size:22px;margin-top:4px}
+    table{width:100%;border-collapse:separate;border-spacing:0 8px}
+    th,td{padding:10px 12px;text-align:left}
+    th{color:var(--muted);font-weight:600;border-bottom:1px solid var(--border)}
+    tr.row{background:var(--card);border:1px solid var(--border)}
+    tr.row td:first-child{border-top-left-radius:12px;border-bottom-left-radius:12px}
+    tr.row td:last-child{border-top-right-radius:12px;border-bottom-right-radius:12px}
+    .pill{display:inline-block;padding:4px 10px;border-radius:999px;font-size:12px;color:#0b1120;background:var(--good)}
+    .pill.bad{background:var(--bad);color:#fff}
+    .bar{position:relative;height:8px;border-radius:8px;background:#222536;overflow:hidden}
+    .bar>i{position:absolute;inset:0;width:0%;background:linear-gradient(90deg,var(--accent),var(--accent-2));}
+    .foot{margin-top:16px;color:var(--muted);font-size:12px;display:flex;justify-content:space-between;align-items:center}
+    .btn{border:1px solid var(--border);padding:8px 12px;border-radius:12px;color:var(--ink);text-decoration:none}
+    .btn:hover{background:#1b1c2c}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <span class="dot"></span>
+      <div>
+        <h1>Family Budget — Live</h1>
+        <div class="sub" id="period">Loading period…</div>
+      </div>
+    </header>
+    <div class="grid">
+      <section class="card">
+        <h2>Overview</h2>
+        <div class="kpis">
+          <div class="kpi"><div class="label">Total Budget</div><div class="value" id="kpiBudget">—</div></div>
+          <div class="kpi"><div class="label">Total Spent</div><div class="value" id="kpiSpent">—</div></div>
+          <div class="kpi"><div class="label">Total Left</div><div class="value" id="kpiLeft">—</div></div>
+        </div>
+        <table>
+          <thead><tr><th>Category</th><th>Budget</th><th>Spent</th><th>Left</th><th style="width:34%">Progress</th></tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+        <div class="foot">
+          <span>Tap a category to focus in the chart.</span>
+          <a class="btn" id="openSheet" target="_blank" rel="noopener">Open source sheet</a>
+        </div>
+      </section>
+      <section class="card">
+        <h2>Where the money went</h2>
+        <div id="pie" style="width:100%;height:380px"></div>
+      </section>
+    </div>
+  </div>
+<script>
+const SHEET_ID = "18-7J4yHkTpOCIbsiDMn-uTwdkxQrZwUErQFHA8cf4UA";
+const GID = "135738082";
+const RANGE = "DashboardData!A1:E50";
+const SHEET_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/edit#gid=${GID}`;
+google.charts.load('current', {'packages':['corechart','table']});
+function fmtMoney(n){if(n==null||isNaN(n))return"R0";return new Intl.NumberFormat('en-ZA',{style:'currency',currency:'ZAR',maximumFractionDigits:2}).format(n);}
+function buildQueryUrl(){return`https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?gid=${GID}&tqx=out:json&range=${encodeURIComponent(RANGE)}`;}
+function parseGViz(t){return JSON.parse(t.match(/google\.visualization\.Query\.setResponse\((.*)\);/s)[1]);}
+async function fetchData(){const r=await fetch(buildQueryUrl());const x=await r.text();return parseGViz(x);}
+function render({table}){
+  const cols=table.cols.map(c=>c.label||c.id);
+  const rows=table.rows.map(r=>r.c.map(c=>c?c.v:null));
+  const catIdx=0,budIdx=1,spIdx=2,leftIdx=3,periodIdx=4;
+  const period=rows.length?rows[0][periodIdx]:"";
+  document.getElementById('period').textContent=period||"Current cycle";
+  document.getElementById('openSheet').href=SHEET_URL;
+  let totalBudget=0,totalSpent=0,totalLeft=0;
+  const tbody=document.getElementById('rows');tbody.innerHTML='';
+  const pieArray=[["Category","Spent"]];
+  rows.forEach(r=>{const cat=r[catIdx];const bud=Number(r[budIdx]||0);const sp=Number(r[spIdx]||0);const lf=Number(r[leftIdx]||0);totalBudget+=bud;totalSpent+=sp;totalLeft+=lf;
+    const tr=document.createElement('tr');tr.className='row';
+    const tdCat=document.createElement('td');tdCat.textContent=cat;tr.appendChild(tdCat);
+    const tdBud=document.createElement('td');tdBud.textContent=fmtMoney(bud);tr.appendChild(tdBud);
+    const tdSp=document.createElement('td');tdSp.textContent=fmtMoney(sp);tr.appendChild(tdSp);
+    const tdLf=document.createElement('td');const pill=document.createElement('span');pill.className='pill'+(lf<0?' bad':'');pill.textContent=fmtMoney(lf);tdLf.appendChild(pill);tr.appendChild(tdLf);
+    const tdBar=document.createElement('td');const bar=document.createElement('div');bar.className='bar';const fill=document.createElement('i');const pct=bud>0?Math.min(100,(sp/bud)*100):0;fill.style.width=pct.toFixed(1)+'%';bar.appendChild(fill);tdBar.appendChild(bar);tr.appendChild(tdBar);
+    tbody.appendChild(tr);if(sp>0)pieArray.push([cat,sp]);});
+  document.getElementById('kpiBudget').textContent=fmtMoney(totalBudget);
+  document.getElementById('kpiSpent').textContent=fmtMoney(totalSpent);
+  document.getElementById('kpiLeft').textContent=fmtMoney(totalLeft);
+  google.charts.setOnLoadCallback(()=>{const data=google.visualization.arrayToDataTable(pieArray);const chart=new google.visualization.PieChart(document.getElementById('pie'));chart.draw(data,{legend:{position:'right',textStyle:{color:'#e9eaf3'}},backgroundColor:'transparent',chartArea:{width:'92%',height:'85%'}});});}
+(async function init(){try{const d=await fetchData();render(d);}catch(err){console.error(err);document.getElementById('period').textContent='Could not load — check Sheet ID / gid / range or sharing (Publish to Web).';}})();
+</script>
+</body>
+</html>
